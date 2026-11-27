@@ -55,43 +55,99 @@ function splitChunks(lines) {
   return chunks;
 }
 
+// Ошибки, после которых провайдер считается временно недоступным: нет связи, таймаут, неверный ключ,
+// кончились деньги или лимит (401/402/403/429), сбой на стороне сервера (5xx), «upstream unavailable»
+function isOutage(err) {
+  if (!err.status) return true;
+  if ([401, 402, 403, 408, 429].includes(err.status) || err.status >= 500) return true;
+  return /upstream|unavailable|quota|limit|credit|balance/i.test(err.body ?? '');
+}
+
 export class Summarizer {
-  constructor({ title, apiKey, model, baseUrl, params = {} }) {
-    this.title = title;
-    this.apiKey = apiKey;
-    this.model = model;
-    this.params = params;
-    this.url = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
+  /**
+   * primary — основной провайдер, fallback — запасной (или null).
+   * После сбоя основного следующие retryMin минут запросы сразу идут к запасному.
+   */
+  constructor(primary, { fallback = null, retryMin = 10 } = {}) {
+    this.providers = [primary, fallback].filter(Boolean).map((p) => ({
+      ...p,
+      url: `${p.baseUrl.replace(/\/$/, '')}/chat/completions`,
+      downUntil: 0,
+    }));
+    this.retryMs = retryMin * 60_000;
   }
 
   async chat(userContent, maxTokens = 1500, systemPrompt = SYSTEM_PROMPT) {
     return (await this.complete(userContent, maxTokens, systemPrompt)).text;
   }
 
-  // Как chat, но ещё сообщает, оборвался ли ответ на пределе max_tokens
+  // Как chat, но ещё сообщает, оборвался ли ответ на пределе max_tokens. При сбое переходит к запасному провайдеру
   async complete(userContent, maxTokens, systemPrompt) {
-    const res = await fetch(this.url, {
+    const now = Date.now();
+    // Сначала провайдеры без недавнего сбоя, по порядку; если сбоили все — всё равно пробуем по порядку
+    const order = [
+      ...this.providers.filter((p) => p.downUntil <= now),
+      ...this.providers.filter((p) => p.downUntil > now),
+    ];
+    let lastError;
+    for (const [i, p] of order.entries()) {
+      try {
+        const result = await this.request(p, userContent, maxTokens, systemPrompt);
+        if (p.downUntil) {
+          p.downUntil = 0;
+          console.log(`${p.title} снова доступен`);
+        }
+        return result;
+      } catch (err) {
+        if (!isOutage(err)) throw err;
+        lastError = err;
+        p.downUntil = Date.now() + this.retryMs;
+        const next = order[i + 1];
+        console.error(`${p.title} недоступен: ${err.message}${next ? `. Переключаюсь на ${next.title}` : ''}`);
+      }
+    }
+    throw lastError;
+  }
+
+  async request(p, userContent, maxTokens, systemPrompt) {
+    let res;
+    try {
+      res = await this.fetch(p, userContent, maxTokens, systemPrompt);
+    } catch (err) {
+      throw new Error(`${p.title}: ${err.message}`);
+    }
+    if (!res.ok) {
+      const body = (await res.text()).slice(0, 500);
+      const err = new Error(`${p.title} API ${res.status}: ${body}`);
+      err.status = res.status;
+      err.body = body;
+      throw err;
+    }
+    return this.parse(await res.json());
+  }
+
+  fetch(p, userContent, maxTokens, systemPrompt) {
+    return fetch(p.url, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${this.apiKey}`,
+        Authorization: `Bearer ${p.apiKey}`,
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
       body: JSON.stringify({
-        model: this.model,
+        model: p.model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContent },
         ],
         max_tokens: maxTokens,
-        ...this.params,
+        ...p.params,
       }),
       signal: AbortSignal.timeout(180_000),
     });
-    if (!res.ok) {
-      throw new Error(`${this.title} API ${res.status}: ${(await res.text()).slice(0, 500)}`);
-    }
-    const data = await res.json();
+  }
+
+  parse(data) {
     const choice = data.choices?.[0];
     const text = choice?.message?.content ?? '';
     return {
