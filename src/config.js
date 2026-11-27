@@ -48,5 +48,6 @@ export const config = {
   maxMessages: Number(process.env.MAX_MESSAGES) || 3000,
   cooldownSec: Number(process.env.COMMAND_COOLDOWN_SEC ?? 60),
   askCooldownSec: Number(process.env.ASK_COOLDOWN_SEC ?? 15),
+  askMaxTokens: Number(process.env.ASK_MAX_TOKENS) || 4000,
   adminIds: (process.env.ADMIN_IDS ?? '').split(/[\s,]+/).filter(Boolean).map(Number),
 };
