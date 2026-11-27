@@ -1,0 +1,18 @@
+name: Main source
+
+# В main можно сливать только ветку dev: эта проверка обязательна для pull request в main
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  only-from-dev:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull request в main только из dev
+        run: |
+          if [ "${{ github.head_ref }}" != "dev" ] || [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+            echo "::error::В main можно сливать только ветку dev этого репозитория, а не ${{ github.event.pull_request.head.label }}"
+            exit 1
+          fi
+          echo "Источник — dev, слияние разрешено"

@@ -81,14 +81,20 @@ systemctl stop vk-summary-bot          # остановка
 
 ## Автоматическое развёртывание (GitHub Actions)
 
-Разработка ведётся в ветке `dev`. При пуше в `main` GitHub Actions сам разворачивает бота на сервере
-(`.github/workflows/deploy.yml`):
+Разработка ведётся в ветке `dev`. Когда в `main` что-то попадает, GitHub Actions сам разворачивает бота
+на сервере (`.github/workflows/deploy.yml`).
+
+Ветка `main` защищена: пушить в неё напрямую нельзя, изменения попадают туда только через pull request
+из `dev`. Это проверяет `.github/workflows/main-source.yml`, а правило ветки делает проверку обязательной.
 
 ```bash
 git checkout dev        # работаем в dev, коммитим и пушим сюда
-git checkout main && git merge dev && git push   # выкатить на сервер
-git checkout dev
+git push
 ```
+
+Чтобы выкатить на сервер, откройте pull request `dev → main`
+(https://github.com/santonov62/vk-summary-bot/compare/main...dev), дождитесь проверки и нажмите
+Merge pull request. После слияния подтяните `main` локально, если он нужен: `git pull origin main`.
 
 Ход развёртывания и ошибки видны на вкладке Actions репозитория. Запустить развёртывание вручную можно там же:
 Deploy → Run workflow.
