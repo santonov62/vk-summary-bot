@@ -65,6 +65,11 @@ export class Summarizer {
   }
 
   async chat(userContent, maxTokens = 1500, systemPrompt = SYSTEM_PROMPT) {
+    return (await this.complete(userContent, maxTokens, systemPrompt)).text;
+  }
+
+  // Как chat, но ещё сообщает, оборвался ли ответ на пределе max_tokens
+  async complete(userContent, maxTokens, systemPrompt) {
     const res = await fetch(this.url, {
       method: 'POST',
       headers: {
@@ -87,23 +92,28 @@ export class Summarizer {
       throw new Error(`${this.title} API ${res.status}: ${(await res.text()).slice(0, 500)}`);
     }
     const data = await res.json();
-    const text = data.choices?.[0]?.message?.content ?? '';
-    return stripMarkdown(text.replace(/<think>[\s\S]*?<\/think>/g, '')).trim();
+    const choice = data.choices?.[0];
+    const text = choice?.message?.content ?? '';
+    return {
+      text: stripMarkdown(text.replace(/<think>[\s\S]*?<\/think>/g, '')).trim(),
+      truncated: choice?.finish_reason === 'length',
+    };
   }
 
   /**
-   * Ответ на произвольный вопрос.
-   * context — текст сообщения, на которое отвечает спрашивающий; images — картинки в виде data URL.
+   * Ответ на произвольный вопрос. Возвращает { text, truncated }.
+   * contextTexts — тексты сообщения, на которое ответили, и пересланных сообщений; images — картинки (data URL).
    */
-  ask(question, context, images = []) {
-    let text = question || 'Опиши, что на изображении.';
-    if (context) text = `Сообщение, к которому относится вопрос:\n«${context}»\n\nВопрос: ${text}`;
-    if (!images.length) return this.chat(text, 1500, ASSISTANT_PROMPT);
-    const content = [
-      { type: 'text', text },
-      ...images.map((url) => ({ type: 'image_url', image_url: { url } })),
-    ];
-    return this.chat(content, 1500, ASSISTANT_PROMPT);
+  ask(question, contextTexts = [], images = [], maxTokens = 4000) {
+    let text = question || (images.length ? 'Опиши, что на изображении.' : 'Что скажешь об этом?');
+    if (contextTexts.length) {
+      const context = contextTexts.map((t) => `«${t}»`).join('\n\n');
+      text = `Сообщения, к которым относится вопрос:\n${context}\n\nВопрос: ${text}`;
+    }
+    const content = images.length
+      ? [{ type: 'text', text }, ...images.map((url) => ({ type: 'image_url', image_url: { url } }))]
+      : text;
+    return this.complete(content, maxTokens, ASSISTANT_PROMPT);
   }
 
   // Ответ на вопрос по переписке (lines — строки «[время] Автор: текст»)

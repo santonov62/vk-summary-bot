@@ -41,7 +41,7 @@ const HELP_TEXT = `${BOT_MARK} Команды:
 
 /ии вопрос — задать любой вопрос ИИ
 Пример: /ии как сварить борщ
-Если отправить /ии ответом на сообщение, вопрос будет про это сообщение (например, «/ии переведи»).
+Если отправить /ии ответом на сообщение или переслать сообщения вместе с /ии, вопрос будет про них (например, «/ии переведи»).
 ИИ понимает картинки: прикрепите фото к /ии или ответьте /ии на сообщение с фото.
 
 /чат [период] вопрос — вопрос по переписке этого чата (по умолчанию за последние 7 дней)
@@ -204,15 +204,39 @@ async function handleChatQuestion(peerId, arg, commandDate, commandCmid) {
   }
 }
 
-async function handleAsk(peerId, question, replyText, photos) {
-  if (!question && !photos.length) {
+// Сколько символов из сообщений, на которые ответили или которые переслали, отправлять модели
+const MAX_CONTEXT_CHARS = 30_000;
+
+function limitContext(texts) {
+  const result = [];
+  let left = MAX_CONTEXT_CHARS;
+  for (const text of texts) {
+    if (left <= 0) break;
+    result.push(text.length > left ? `${text.slice(0, left)}…` : text);
+    left -= text.length;
+  }
+  return result;
+}
+
+async function handleAsk(peerId, question, contextTexts, photos) {
+  if (!question && !photos.length && !contextTexts.length) {
     await reply(peerId, 'Напишите вопрос после команды или прикрепите фото, например: /ии как сварить борщ');
     return;
   }
   try {
     const images = await Promise.all(photos.slice(0, MAX_IMAGES).map(downloadImage));
-    const answer = await summarizer.ask(question, replyText.slice(0, 4000), images);
-    const parts = splitMessage(answer || 'Модель вернула пустой ответ.');
+    const { text, truncated } = await summarizer.ask(
+      question, limitContext(contextTexts), images, config.askMaxTokens,
+    );
+    if (truncated) console.log('  ответ модели обрезан на пределе ASK_MAX_TOKENS');
+    let answer = text || 'Модель вернула пустой ответ.';
+    if (truncated) {
+      // Модель может потратить весь предел на скрытые рассуждения и не успеть написать ответ
+      answer = text
+        ? `${text}\n\n(ответ обрезан — слишком длинный. Уточните или сузьте вопрос)`
+        : 'Ответ получился слишком длинным и не уместился. Уточните или сузьте вопрос.';
+    }
+    const parts = splitMessage(answer);
     for (const [i, part] of parts.entries()) {
       if (i > 0) await sleep(SEND_DELAY_MS);
       await reply(peerId, part);
@@ -237,7 +261,7 @@ function cooldownLeft(kind, peerId, fromId, now) {
   return 0;
 }
 
-async function onMessage({ peerId, cmid, date, text, fromId, replyText, photos }) {
+async function onMessage({ peerId, cmid, date, text, fromId, contextTexts, photos }) {
   const command = stripMention(text);
   if (command.startsWith(BOT_MARK)) return;
 
@@ -263,7 +287,7 @@ async function onMessage({ peerId, cmid, date, text, fromId, replyText, photos }
 
   try {
     if (isHelp) await vk.sendMessage(peerId, HELP_TEXT);
-    else if (ask) await handleAsk(peerId, (ask[2] ?? '').trim(), replyText, photos);
+    else if (ask) await handleAsk(peerId, (ask[2] ?? '').trim(), contextTexts, photos);
     else if (chat) await handleChatQuestion(peerId, (chat[2] ?? '').trim(), date, cmid);
     else await handleSummary(peerId, match[2], date, cmid);
   } catch (err) {

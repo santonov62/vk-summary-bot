@@ -26,6 +26,19 @@ function photoUrls(msg) {
   return urls;
 }
 
+// Сообщение, на которое ответили, и все пересланные сообщения (включая вложенные пересылки)
+function relatedMessages(msg) {
+  const result = msg.reply_message ? [msg.reply_message] : [];
+  const walk = (list, depth) => {
+    for (const fwd of list ?? []) {
+      result.push(fwd);
+      if (depth < 5) walk(fwd.fwd_messages, depth + 1);
+    }
+  };
+  walk(msg.fwd_messages, 0);
+  return result;
+}
+
 // Скачивает картинку и превращает её в data URL для модели
 export async function downloadImage(url) {
   const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
@@ -169,6 +182,7 @@ export class VkApi {
         if (update.type !== 'message_new') continue;
         const msg = update.object?.message;
         if (!msg) continue;
+        const related = relatedMessages(msg);
         try {
           await onMessage({
             peerId: msg.peer_id,
@@ -176,8 +190,9 @@ export class VkApi {
             date: msg.date,
             text: msg.text ?? '',
             fromId: msg.from_id,
-            replyText: msg.reply_message?.text ?? '',
-            photos: [msg, msg.reply_message, ...(msg.fwd_messages ?? [])].flatMap(photoUrls),
+            // Тексты сообщения, на которое ответили, и пересланных сообщений
+            contextTexts: related.map((m) => m.text).filter(Boolean),
+            photos: [msg, ...related].flatMap(photoUrls),
           });
         } catch (err) {
           console.error('Ошибка обработки сообщения:', err);
