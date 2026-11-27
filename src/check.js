@@ -32,21 +32,17 @@ try {
 }
 
 try {
-  const summarizer = new Summarizer({
-    apiKey: config.nvidiaKey,
-    model: config.nvidiaModel,
-    baseUrl: config.nvidiaBaseUrl,
-  });
+  const summarizer = new Summarizer(config.llm);
   const started = Date.now();
   const answer = await summarizer.summarize(
     ['[27.11 10:00] Иван: Встречаемся завтра в 15:00 у офиса', '[27.11 10:01] Мария: Ок, я возьму проектор'],
     'тест',
   );
-  console.log(`✅ NVIDIA (${config.nvidiaModel}) отвечает, ${((Date.now() - started) / 1000).toFixed(1)} c:`);
+  console.log(`✅ ${config.llm.title} (${config.llm.model}) отвечает, ${((Date.now() - started) / 1000).toFixed(1)} c:`);
   console.log(answer.split('\n').map((l) => `   ${l}`).join('\n'));
 } catch (err) {
   ok = false;
-  console.log(`❌ NVIDIA: ${err.message}`);
+  console.log(`❌ ${config.llm.title}: ${err.message}`);
 }
 
 process.exit(ok ? 0 : 1);

@@ -56,9 +56,11 @@ function splitChunks(lines) {
 }
 
 export class Summarizer {
-  constructor({ apiKey, model, baseUrl }) {
+  constructor({ title, apiKey, model, baseUrl, params = {} }) {
+    this.title = title;
     this.apiKey = apiKey;
     this.model = model;
+    this.params = params;
     this.url = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
   }
 
@@ -76,16 +78,13 @@ export class Summarizer {
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContent },
         ],
-        temperature: 0.3,
-        top_p: 0.95,
         max_tokens: maxTokens,
-        // Отключает режим рассуждений у моделей Nemotron 3: быстрее и не тратит токены
-        chat_template_kwargs: { enable_thinking: false },
+        ...this.params,
       }),
       signal: AbortSignal.timeout(180_000),
     });
     if (!res.ok) {
-      throw new Error(`NVIDIA API ${res.status}: ${(await res.text()).slice(0, 500)}`);
+      throw new Error(`${this.title} API ${res.status}: ${(await res.text()).slice(0, 500)}`);
     }
     const data = await res.json();
     const text = data.choices?.[0]?.message?.content ?? '';

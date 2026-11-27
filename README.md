@@ -23,13 +23,19 @@
 **Внимание:** ключ даёт доступ к сообщениям сообщества. Никому его не передавайте и не публикуйте файл `.env`.
 Если ключ утёк — удалите его в разделе «Работа с API» и создайте новый.
 
-## Ключ NVIDIA
+## Провайдер ИИ
 
-Ключ берётся на https://build.nvidia.com (начинается с `nvapi-`). По умолчанию используется
-`nvidia/nemotron-3.5-super-vl-120b-a12b` — она понимает картинки, поэтому `/ии` может отвечать про фото.
-Можно указать другую модель Nemotron в `NVIDIA_MODEL`, например `nvidia/nemotron-3-ultra-550b-a55b`
-или `nvidia/nemotron-3.5-lightning-30b-a3b`, но они картинки не понимают.
-NVIDIA периодически снимает старые модели с поддержки — проверить связь и модель можно командой `npm run check`.
+Провайдер выбирается в `LLM_PROVIDER`. Оба работают через OpenAI-совместимый API, переключение — сменой
+одной строки в `.env` (и `npm run deploy` / обновлением секрета `ENV_FILE`).
+
+- `spiderssense` — ключ в `SPIDERSSENSE_API_KEY` (начинается с `sk-uno-`), модель в `SPIDERSSENSE_MODEL`,
+  по умолчанию `anthropic/claude-opus-5.5`. Понимает картинки. Список моделей:
+  `curl https://spiderssense.com/v1/models -H "Authorization: Bearer $SPIDERSSENSE_API_KEY"`.
+- `nvidia` — ключ с https://build.nvidia.com в `NVIDIA_API_KEY` (начинается с `nvapi-`), модель в
+  `NVIDIA_MODEL`, по умолчанию `nvidia/nemotron-3.5-super-vl-120b-a12b` (понимает картинки). Другие модели
+  Nemotron, например `nvidia/nemotron-3.5-lightning-30b-a3b`, картинки не понимают.
+
+Проверить связь и модель можно командой `npm run check`.
 
 ## Проверка настроек
 
@@ -37,7 +43,7 @@ NVIDIA периодически снимает старые модели с по
 npm run check
 ```
 
-Проверяет ключ сообщества, настройки Long Poll, доступ к сообщениям и отвечает ли модель NVIDIA.
+Проверяет ключ сообщества, настройки Long Poll, доступ к сообщениям и отвечает ли модель ИИ.
 
 ## Запуск
 

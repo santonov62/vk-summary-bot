@@ -4,11 +4,7 @@ import { Summarizer } from './summarizer.js';
 import { parsePeriod, formatTime, PERIODS_HELP } from './periods.js';
 
 const vk = new VkApi(config.vkToken);
-const summarizer = new Summarizer({
-  apiKey: config.nvidiaKey,
-  model: config.nvidiaModel,
-  baseUrl: config.nvidiaBaseUrl,
-});
+const summarizer = new Summarizer(config.llm);
 
 const COMMAND_RE = /^[/!](сводка|выжимка|summary|итоги)(?:\s+(.*))?$/is;
 const HELP_RE = /^[/!](помощь|help)$/i;
@@ -228,7 +224,7 @@ async function handleAsk(peerId, question, replyText, photos) {
   }
 }
 
-// Ограничение частоты команд в одном чате, чтобы не тратить лимиты NVIDIA и не словить флуд-контроль ВК.
+// Ограничение частоты команд в одном чате, чтобы не тратить лимиты ИИ и не словить флуд-контроль ВК.
 // Для сводок и вопросов паузы отдельные.
 const lastCommandAt = { summary: new Map(), ask: new Map() };
 
@@ -282,5 +278,5 @@ try {
   console.error(`Не удалось запустить бота: ${err.message}`);
   process.exit(1);
 }
-console.log(`Бот запущен от имени сообщества «${group.name}» (club${group.id}). Модель: ${config.nvidiaModel}`);
+console.log(`Бот запущен от имени сообщества «${group.name}» (club${group.id}). ИИ: ${config.llm.title}, ${config.llm.model}`);
 await vk.listenMessages(group.id, onMessage);
