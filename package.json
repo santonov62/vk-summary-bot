@@ -1,0 +1,16 @@
+{
+  "name": "vk-summary-bot",
+  "version": "1.0.0",
+  "description": "VK-бот, который делает выжимку переписки в чате через NVIDIA Nemotron",
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=20.6"
+  },
+  "scripts": {
+    "start": "node --env-file=.env src/index.js",
+    "check": "node --env-file=.env src/check.js",
+    "deploy": "./deploy/deploy.sh",
+    "logs": "./deploy/logs.sh"
+  }
+}

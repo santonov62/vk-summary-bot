@@ -1,0 +1,24 @@
+[Unit]
+Description=VK Summary Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vkbot
+WorkingDirectory=/opt/vk-summary-bot
+ExecStart=/usr/bin/env node --env-file=.env src/index.js
+Restart=always
+RestartSec=10
+# Не перезапускать чаще 5 раз за 5 минут (например, если ключ перестал работать)
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths=/opt/vk-summary-bot
+
+[Install]
+WantedBy=multi-user.target
