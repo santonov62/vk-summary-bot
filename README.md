@@ -79,6 +79,31 @@ systemctl restart vk-summary-bot       # перезапуск
 systemctl stop vk-summary-bot          # остановка
 ```
 
+## Автоматическое развёртывание (GitHub Actions)
+
+Разработка ведётся в ветке `dev`. При пуше в `main` GitHub Actions сам разворачивает бота на сервере
+(`.github/workflows/deploy.yml`):
+
+```bash
+git checkout dev        # работаем в dev, коммитим и пушим сюда
+git checkout main && git merge dev && git push   # выкатить на сервер
+git checkout dev
+```
+
+Ход развёртывания и ошибки видны на вкладке Actions репозитория. Запустить развёртывание вручную можно там же:
+Deploy → Run workflow.
+
+Для работы нужны секреты репозитория (Settings → Secrets and variables → Actions → New repository secret):
+
+| Секрет | Что в нём |
+|---|---|
+| `SSH_PRIVATE_KEY` | приватный SSH-ключ, которым Actions входит на сервер |
+| `SSH_KNOWN_HOSTS` | отпечатки сервера (`ssh-keyscan 1.2.3.4`) |
+| `ENV_FILE` | всё содержимое `.env`, включая `DEPLOY_HOST` |
+
+Если поменяли `.env` — обновите секрет `ENV_FILE`, иначе при следующем развёртывании на сервер вернутся старые
+настройки.
+
 ## Команды
 
 Команды может отправить любой участник беседы, куда добавлено сообщество, а также любой, кто пишет сообществу
