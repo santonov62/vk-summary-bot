@@ -27,23 +27,33 @@ const PROVIDERS = {
   },
 };
 
-const providerName = (process.env.LLM_PROVIDER || 'nvidia').toLowerCase();
-const provider = PROVIDERS[providerName];
-if (!provider) {
-  console.error(`Неизвестный LLM_PROVIDER «${providerName}». Доступно: ${Object.keys(PROVIDERS).join(', ')}`);
-  process.exit(1);
+function provider(name, variable) {
+  const p = PROVIDERS[name];
+  if (!p) {
+    console.error(`Неизвестный ${variable} «${name}». Доступно: ${Object.keys(PROVIDERS).join(', ')}`);
+    process.exit(1);
+  }
+  return {
+    name,
+    title: p.title,
+    apiKey: required(`${p.env}_API_KEY`),
+    model: process.env[`${p.env}_MODEL`] || p.model,
+    baseUrl: process.env[`${p.env}_BASE_URL`] || p.baseUrl,
+    params: p.params,
+  };
 }
+
+const primaryName = (process.env.LLM_PROVIDER || 'nvidia').toLowerCase();
+// Запасной провайдер на случай, если основной недоступен или кончился лимит. Пусто или none — без запасного
+const fallbackName = (process.env.LLM_FALLBACK || '').toLowerCase();
+const useFallback = fallbackName && fallbackName !== 'none' && fallbackName !== primaryName;
 
 export const config = {
   vkToken: required('VK_GROUP_TOKEN'),
-  llm: {
-    name: providerName,
-    title: provider.title,
-    apiKey: required(`${provider.env}_API_KEY`),
-    model: process.env[`${provider.env}_MODEL`] || provider.model,
-    baseUrl: process.env[`${provider.env}_BASE_URL`] || provider.baseUrl,
-    params: provider.params,
-  },
+  llm: provider(primaryName, 'LLM_PROVIDER'),
+  llmFallback: useFallback ? provider(fallbackName, 'LLM_FALLBACK') : null,
+  // Сколько минут после сбоя основного провайдера сразу идти к запасному, не пробуя основной
+  llmRetryMin: Number(process.env.LLM_RETRY_MIN ?? 10),
   timezone: process.env.TIMEZONE || 'Europe/Moscow',
   maxMessages: Number(process.env.MAX_MESSAGES) || 3000,
   cooldownSec: Number(process.env.COMMAND_COOLDOWN_SEC ?? 60),

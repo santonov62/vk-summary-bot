@@ -4,7 +4,7 @@ import { Summarizer } from './summarizer.js';
 import { parsePeriod, formatTime, PERIODS_HELP } from './periods.js';
 
 const vk = new VkApi(config.vkToken);
-const summarizer = new Summarizer(config.llm);
+const summarizer = new Summarizer(config.llm, { fallback: config.llmFallback, retryMin: config.llmRetryMin });
 
 const COMMAND_RE = /^[/!](сводка|выжимка|summary|итоги)(?:\s+(.*))?$/is;
 const HELP_RE = /^[/!](помощь|help)$/i;
@@ -302,5 +302,6 @@ try {
   console.error(`Не удалось запустить бота: ${err.message}`);
   process.exit(1);
 }
-console.log(`Бот запущен от имени сообщества «${group.name}» (club${group.id}). ИИ: ${config.llm.title}, ${config.llm.model}`);
+console.log(`Бот запущен от имени сообщества «${group.name}» (club${group.id}). ИИ: ${config.llm.title}, ${config.llm.model}`
+  + (config.llmFallback ? `; запасной: ${config.llmFallback.title}, ${config.llmFallback.model}` : ''));
 await vk.listenMessages(group.id, onMessage);
