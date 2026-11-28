@@ -93,6 +93,33 @@ export class VkApi {
   }
 
   /**
+   * Отправляет сообщение, которое потом можно отредактировать. Возвращает его conversation_message_id
+   * (только с peer_ids ВК возвращает его для бесед; message_id у сообщества в беседах бывает 0).
+   */
+  async sendEditable(peerId, text) {
+    const res = await this.call('messages.send', {
+      peer_ids: peerId,
+      message: text,
+      random_id: Math.floor(Math.random() * 2 ** 31),
+      disable_mentions: 1,
+    });
+    const sent = Array.isArray(res) ? res[0] : null;
+    if (sent?.error) throw new Error(`VK messages.send: ${JSON.stringify(sent.error)}`);
+    if (!sent?.conversation_message_id) throw new Error(`VK messages.send: нет conversation_message_id в ответе ${JSON.stringify(res)}`);
+    return sent.conversation_message_id;
+  }
+
+  editMessage(peerId, cmid, text) {
+    return this.call('messages.edit', {
+      peer_id: peerId,
+      cmid,
+      message: text,
+      disable_mentions: 1,
+      keep_forward_messages: 1,
+    });
+  }
+
+  /**
    * Загружает историю чата, идя по номерам сообщений (conversation_message_id) назад от `beforeCmid`,
    * пока не дойдёт до времени `from`. Сообщество не может вызывать messages.getHistory для бесед,
    * а этот метод ему доступен.
