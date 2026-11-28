@@ -105,6 +105,47 @@ function splitMessage(text) {
 
 const reply = (peerId, text) => vk.sendMessage(peerId, `${BOT_MARK} ${text}`);
 
+/**
+ * Сообщение «Думаю…», которое потом заменяется ответом. Если отправить или отредактировать его
+ * не удалось (кроме флуд-контроля), ответ просто приходит новым сообщением.
+ */
+async function startStatus(peerId, text = 'Думаю…') {
+  let cmid = null;
+  try {
+    cmid = await vk.sendEditable(peerId, `${BOT_MARK} ${text}`);
+  } catch (err) {
+    if (err.code === FLOOD_CONTROL) throw err;
+    console.error('Не удалось отправить сообщение «Думаю…»:', err.message);
+  }
+
+  const edit = async (newText) => {
+    if (cmid) {
+      try {
+        await vk.editMessage(peerId, cmid, `${BOT_MARK} ${newText}`);
+        return;
+      } catch (err) {
+        if (err.code === FLOOD_CONTROL) throw err;
+        console.error('Не удалось отредактировать сообщение бота:', err.message);
+        cmid = null;
+      }
+    }
+    await reply(peerId, newText);
+  };
+
+  return {
+    update: edit,
+    // Первая часть ответа заменяет «Думаю…», остальные приходят отдельными сообщениями
+    async finish(fullText) {
+      const parts = splitMessage(fullText);
+      await edit(parts[0]);
+      for (const part of parts.slice(1)) {
+        await sleep(SEND_DELAY_MS);
+        await reply(peerId, part);
+      }
+    },
+  };
+}
+
 const NO_ACCESS_TEXT = 'Нет доступа к переписке. Сделайте сообщество администратором беседы и повторите команду.';
 
 // Переписка за период в виде строк «[время] Автор: текст», без команд и ответов бота
@@ -133,28 +174,26 @@ async function handleSummary(peerId, periodArg, commandDate, commandCmid) {
   }
 
   busyChats.add(peerId);
+  let status;
   try {
+    status = await startStatus(peerId, `Читаю переписку за ${period.title}…`);
     const { lines, truncated } = await loadLines(peerId, commandCmid, period);
     if (!lines.length) {
-      await reply(peerId, `За период «${period.title}» сообщений не найдено.`);
+      await status.update(`За период «${period.title}» сообщений не найдено.`);
       return;
     }
 
-    await reply(peerId, `Готовлю сводку за ${period.title} (${lines.length} сообщ.)…`);
+    await status.update(`Готовлю сводку за ${period.title} (${lines.length} сообщ.)…`);
     const summary = await summarizer.summarize(lines, period.title);
     const note = truncated ? `\n(учтены только последние ${config.maxMessages} сообщений)` : '';
     const header = `Сводка за ${period.title} (${lines.length} сообщ.)${note}:\n\n`;
-    const parts = splitMessage(header + (summary || 'Модель вернула пустой ответ.'));
-    for (const [i, part] of parts.entries()) {
-      if (i > 0) await sleep(SEND_DELAY_MS);
-      await reply(peerId, part);
-    }
+    await status.finish(header + (summary || 'Модель вернула пустой ответ.'));
   } catch (err) {
     // При флуд-контроле отправить сообщение об ошибке всё равно не получится
     if (handleFlood(err)) return;
     console.error('Ошибка при создании сводки:', err);
     const text = err.code === NO_CHAT_ACCESS ? NO_ACCESS_TEXT : 'Не удалось сделать сводку, подробности в логе бота.';
-    await reply(peerId, text).catch(handleFlood);
+    await (status ? status.update(text) : reply(peerId, text)).catch(handleFlood);
   } finally {
     busyChats.delete(peerId);
   }
@@ -180,25 +219,23 @@ async function handleChatQuestion(peerId, arg, commandDate, commandCmid) {
   const { period, question } = parseChatQuestion(arg, commandDate);
 
   busyChats.add(peerId);
+  let status;
   try {
+    status = await startStatus(peerId, `Ищу в переписке за ${period.title}…`);
     const { lines, truncated } = await loadLines(peerId, commandCmid, period);
     if (!lines.length) {
-      await reply(peerId, `За период «${period.title}» сообщений не найдено.`);
+      await status.update(`За период «${period.title}» сообщений не найдено.`);
       return;
     }
     const answer = await summarizer.askChat(lines, question, period.title);
     const note = truncated ? ` (учтены только последние ${config.maxMessages} сообщений)` : '';
     const text = answer || `В переписке за ${period.title} ничего не нашлось.`;
-    const parts = splitMessage(`${text}\n\n(искал за ${period.title}, ${lines.length} сообщ.${note})`);
-    for (const [i, part] of parts.entries()) {
-      if (i > 0) await sleep(SEND_DELAY_MS);
-      await reply(peerId, part);
-    }
+    await status.finish(`${text}\n\n(искал за ${period.title}, ${lines.length} сообщ.${note})`);
   } catch (err) {
     if (handleFlood(err)) return;
     console.error('Ошибка при ответе по переписке:', err);
     const text = err.code === NO_CHAT_ACCESS ? NO_ACCESS_TEXT : 'Не удалось получить ответ, подробности в логе бота.';
-    await reply(peerId, text).catch(handleFlood);
+    await (status ? status.update(text) : reply(peerId, text)).catch(handleFlood);
   } finally {
     busyChats.delete(peerId);
   }
@@ -223,7 +260,9 @@ async function handleAsk(peerId, question, contextTexts, photos) {
     await reply(peerId, 'Напишите вопрос после команды или прикрепите фото, например: /ии как сварить борщ');
     return;
   }
+  let status;
   try {
+    status = await startStatus(peerId, photos.length ? 'Смотрю на картинку и думаю…' : 'Думаю…');
     const images = await Promise.all(photos.slice(0, MAX_IMAGES).map(downloadImage));
     const { text, truncated } = await summarizer.ask(
       question, limitContext(contextTexts), images, config.askMaxTokens,
@@ -236,15 +275,12 @@ async function handleAsk(peerId, question, contextTexts, photos) {
         ? `${text}\n\n(ответ обрезан — слишком длинный. Уточните или сузьте вопрос)`
         : 'Ответ получился слишком длинным и не уместился. Уточните или сузьте вопрос.';
     }
-    const parts = splitMessage(answer);
-    for (const [i, part] of parts.entries()) {
-      if (i > 0) await sleep(SEND_DELAY_MS);
-      await reply(peerId, part);
-    }
+    await status.finish(answer);
   } catch (err) {
     if (handleFlood(err)) return;
     console.error('Ошибка при ответе на вопрос:', err);
-    await reply(peerId, 'Не удалось получить ответ, подробности в логе бота.').catch(handleFlood);
+    const text = 'Не удалось получить ответ, подробности в логе бота.';
+    await (status ? status.update(text) : reply(peerId, text)).catch(handleFlood);
   }
 }
 
